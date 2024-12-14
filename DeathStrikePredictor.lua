@@ -68,11 +68,11 @@ local function CreatePredictionOverlay(healthBar)
     overlay:SetHeight(healthBar:GetHeight())
     
     local line = container:CreateTexture(nil, "ARTWORK", nil, 2)
-    line:SetColorTexture(1, 1, 1, 0.8)
+    line:SetColorTexture(1, 0.84, 0, 0.75)
     line:SetHeight(healthBar:GetHeight())
-    line:SetWidth(2)
+    line:SetWidth(1)
     line:SetBlendMode("ADD")
-    
+
     -- Store the container reference
     DSP.container = container
     
@@ -100,19 +100,21 @@ local function UpdatePrediction()
     local healing = max(DSP.damagePool * DSP.baseHealing * DSP.mod * DSP.versMod, 
                        UnitHealthMax("player") * DSP.minHealing * DSP.mod * DSP.versMod)
     
+    -- Hide prediction if there's no valid healing amount
+    if not healing or healing <= 0 then
+        DSP.overlay:Hide()
+        DSP.line:Hide()
+        return
+    end
+
     local healthBar = DSP.healthBar
-    local maxHealth = UnitHealthMax("player")
-    local currentHealth = UnitHealth("player")
-    
-    -- Get the actual width of the health bar
     local width = healthBar:GetWidth()
-    local predictedHealth = min(currentHealth + healing, maxHealth)
+    local maxHealth = UnitHealthMax("player")
+    local health = UnitHealth("player")
+    local startPos = (health / maxHealth) * width
+    local endPos = ((health + healing) / maxHealth) * width
     
-    -- Calculate positions based on health percentages
-    local startPos = (currentHealth / maxHealth) * width
-    local endPos = (predictedHealth / maxHealth) * width
-    
-    -- Update overlay position and size
+    -- Update overlay position
     DSP.overlay:ClearAllPoints()
     DSP.overlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", startPos, 0)
     DSP.overlay:SetWidth(max(1, endPos - startPos))
