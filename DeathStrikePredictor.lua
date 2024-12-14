@@ -31,6 +31,7 @@ DSP.auraMods = {
     end,
     [411241] = -0.25, -- Sarkareth: Void Claws
     [408429] = -0.25, -- Sarkareth: Void Slash
+    [389684] = 0.04, -- Close to the heart, need to add support for 2/2 talent? 
 }
 
 -- Function to find the player's health bar
