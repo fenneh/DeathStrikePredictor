@@ -1,0 +1,7 @@
+## Interface: 100200
+## Title: Death Strike Predictor
+## Notes: Predicts Death Strike healing based on incoming damage
+## Author: fenneh
+## Version: 1.0.0
+
+DeathStrikePredictor.lua
