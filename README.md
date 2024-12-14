@@ -22,7 +22,7 @@ Death Strike Predictor is a World of Warcraft addon that helps Death Knights max
 The addon automatically shows your predicted Death Strike healing on your health bar. Use `/dsp` to toggle the display on/off.
 
 ## Credits
-- Original WeakAura concept by [Death Strike Predictor on Wago.io](https://wago.io/DeathStrikefor)
+- Original WeakAura concept by [Death Strike Predictor on Wago.io](https://wago.io/DeathStrike)
 - Converted and enhanced as a standalone addon for better performance and reliability
 
 ## "For we are the Death Knights of Acherus, and we shall not fall!"
