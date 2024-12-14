@@ -18,7 +18,7 @@ DSP.talentMods = {
 
 -- Auras that modify healing done/taken (per stack)
 DSP.auraMods = {
-    [391459] =  0.06, -- Sanguine Ground
+    [391459] =  0.05, -- Sanguine Ground
     [273947] =  0.08, -- Hemostasis
     [64844]  =  0.04, -- Divine Hymn
     [47788]  =  0.60, -- Guardian Spirit
