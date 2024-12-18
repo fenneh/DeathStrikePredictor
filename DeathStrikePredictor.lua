@@ -1,14 +1,14 @@
 local addonName, DSP = ...
 
--- Create main frame and register events
-local frame = CreateFrame("Frame")
-
 -- Initialize variables
 DSP.damagePool = 0
 DSP.baseHealing = 0.25
 DSP.minHealing = 0.07
 DSP.mod = 1
 DSP.versMod = 1
+DSP.inCombat = false
+DSP.updateThrottle = 0.1  -- Update every 0.1 seconds
+DSP.timeSinceLastUpdate = 0
 
 -- Talents that affect healing done/taken
 DSP.talentMods = {
@@ -96,6 +96,13 @@ local function UpdatePrediction()
             return
         end
     end
+
+    -- Hide predictions if not in combat
+    if not DSP.inCombat then
+        DSP.overlay:Hide()
+        DSP.line:Hide()
+        return
+    end
     
     local healing = max(DSP.damagePool * DSP.baseHealing * DSP.mod * DSP.versMod, 
                        UnitHealthMax("player") * DSP.minHealing * DSP.mod * DSP.versMod)
@@ -126,9 +133,35 @@ local function UpdatePrediction()
     DSP.line:Show()
 end
 
+-- Create main frame and register events
+local frame = CreateFrame("Frame")
+
+-- Set up frame update
+frame:SetScript("OnUpdate", function(self, elapsed)
+    if not DSP.inCombat then return end
+    
+    DSP.timeSinceLastUpdate = DSP.timeSinceLastUpdate + elapsed
+    if DSP.timeSinceLastUpdate >= DSP.updateThrottle then
+        UpdatePrediction()
+        DSP.timeSinceLastUpdate = 0
+    end
+end)
+
 -- Handle events
 local function OnEvent(self, event, ...)
-    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "ADDON_LOADED" then
+    if event == "PLAYER_REGEN_DISABLED" then
+        DSP.inCombat = true
+        UpdatePrediction()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        DSP.inCombat = false
+        DSP.damagePool = 0  -- Clear damage pool when leaving combat
+        UpdatePrediction()
+    elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+        local unit = ...
+        if unit == "player" then
+            UpdatePrediction()
+        end
+    elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "ADDON_LOADED" then
         -- If SUF is loaded but not initialized, wait a bit
         if event == "ADDON_LOADED" and ... == "ShadowedUnitFrames" then
             C_Timer.After(1, function()
@@ -200,7 +233,11 @@ local events = {
     "COMBAT_LOG_EVENT_UNFILTERED",
     "ADDON_LOADED",
     "UI_SCALE_CHANGED",
-    "DISPLAY_SIZE_CHANGED"
+    "DISPLAY_SIZE_CHANGED",
+    "PLAYER_REGEN_ENABLED",
+    "PLAYER_REGEN_DISABLED",
+    "UNIT_HEALTH",
+    "UNIT_MAXHEALTH"
 }
 
 for _, event in ipairs(events) do
