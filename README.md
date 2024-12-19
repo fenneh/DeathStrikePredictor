@@ -26,6 +26,7 @@ The addon automatically shows your predicted Death Strike healing on your health
 
 ## Credits
 - Original WeakAura concept by [Death Strike Predictor on Wago.io](https://wago.io/DeathStrike)
+- Additional features inspired by [Death Strike Healing Prediction on Wago.io](https://wago.io/WlRnUhan3)
 - Converted and enhanced as a standalone addon for better performance and reliability
 
 ## "For we are the Death Knights of Acherus, and we shall not fall!"
