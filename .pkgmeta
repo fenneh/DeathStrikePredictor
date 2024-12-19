@@ -1,0 +1,13 @@
+package-as: DeathStrikePredictor
+enable-nolib-creation: no
+
+ignore:
+    - README.md
+    - .git
+    - .gitignore
+    - .vscode
+    - .pkgmeta
+
+license-output: LICENSE.txt
+
+manual-changelog: CHANGELOG.txt
