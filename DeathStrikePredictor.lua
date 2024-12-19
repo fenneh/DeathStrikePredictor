@@ -9,33 +9,19 @@ DSP.versMod = 1
 DSP.inCombat = false
 DSP.updateThrottle = 0.1  -- Update every 0.1 seconds
 DSP.timeSinceLastUpdate = 0
+local damageQueue = {}
+local DAMAGE_BATCH_INTERVAL = 0.1 -- Process damage every 0.1 seconds
+local damageUpdateTimer = 0
 
--- Talents that affect healing done/taken
-DSP.talentMods = {
-    [273953] = 0.15, -- Voracious
-    [374277] = function() return GetSpecialization() == 1 and 0.05 or 0.6 end -- Improved Death Strike
-}
-
--- Auras that modify healing done/taken (per stack)
-DSP.auraMods = {
-    [391459] =  0.05, -- Sanguine Ground
-    [273947] =  0.08, -- Hemostasis
-    [64844]  =  0.04, -- Divine Hymn
-    [47788]  =  0.60, -- Guardian Spirit
-    [72221]  =  0.05, -- Luck of the Draw
-    [139068] =  0.05, -- Determination
-    [55233]  = function() -- Vampiric Blood
-        local name, _, count = AuraUtil.FindAuraByName("Improved Vampiric Blood", "player")
-        local stacks = count or 0
-        return 0.3 + stacks * 0.05
-    end,
-    [411241] = -0.25, -- Sarkareth: Void Claws
-    [408429] = -0.25, -- Sarkareth: Void Slash
-    [389684] = 0.04, -- Close to the heart, need to add support for 2/2 talent? 
-}
+-- Forward declare all functions that are used by other functions
+local UpdatePrediction
+local FindPlayerHealthBar
+local CreatePredictionOverlay
+local ProcessDamageQueue
+local CleanupFrames
 
 -- Function to find the player's health bar
-local function FindPlayerHealthBar()
+FindPlayerHealthBar = function()
     -- Try to find SUF health bar by exact name from frame stack
     local healthBar = _G["SUFUnitplayer.healthBar"]
     if healthBar then
@@ -55,7 +41,7 @@ local function FindPlayerHealthBar()
 end
 
 -- Create the prediction overlay
-local function CreatePredictionOverlay(healthBar)
+CreatePredictionOverlay = function(healthBar)
     -- Create a frame to hold our textures that's parented to the health bar itself
     local container = CreateFrame("Frame", nil, healthBar)
     container:SetFrameStrata("BACKGROUND")
@@ -80,7 +66,7 @@ local function CreatePredictionOverlay(healthBar)
 end
 
 -- Update the prediction display
-local function UpdatePrediction()
+UpdatePrediction = function()
     if not DSP.healthBar then
         DSP.healthBar = FindPlayerHealthBar()
         if not DSP.healthBar then
@@ -99,9 +85,21 @@ local function UpdatePrediction()
 
     -- Hide predictions if not in combat
     if not DSP.inCombat then
-        DSP.overlay:Hide()
-        DSP.line:Hide()
+        if DSP.container then
+            DSP.container:Hide()
+        end
+        if DSP.overlay then
+            DSP.overlay:Hide()
+        end
+        if DSP.line then
+            DSP.line:Hide()
+        end
         return
+    end
+
+    -- Show container if we're in combat
+    if DSP.container then
+        DSP.container:Show()
     end
     
     local healing = max(DSP.damagePool * DSP.baseHealing * DSP.mod * DSP.versMod, 
@@ -133,14 +131,68 @@ local function UpdatePrediction()
     DSP.line:Show()
 end
 
+-- Cleanup frames function
+CleanupFrames = function()
+    if DSP.container then
+        DSP.container:Hide()
+        DSP.container = nil
+    end
+    DSP.overlay = nil
+    DSP.line = nil
+    DSP.healthBar = nil
+end
+
+-- Process damage queue function
+ProcessDamageQueue = function()
+    local totalDamage = 0
+    for _, damage in ipairs(damageQueue) do
+        totalDamage = totalDamage + damage
+    end
+    if totalDamage > 0 then
+        DSP.damagePool = DSP.damagePool + totalDamage
+        UpdatePrediction()
+    end
+    wipe(damageQueue)
+end
+
+-- Talents that affect healing done/taken
+DSP.talentMods = {
+    [273953] = 0.15, -- Voracious
+    [374277] = function() return GetSpecialization() == 1 and 0.05 or 0.6 end -- Improved Death Strike
+}
+
+-- Auras that modify healing done/taken (per stack)
+DSP.auraMods = {
+    [391459] =  0.05, -- Sanguine Ground
+    [273947] =  0.08, -- Hemostasis
+    [64844]  =  0.04, -- Divine Hymn
+    [47788]  =  0.60, -- Guardian Spirit
+    [72221]  =  0.05, -- Luck of the Draw
+    [139068] =  0.05, -- Determination
+    [55233]  = function() -- Vampiric Blood
+        local name, _, count = AuraUtil.FindAuraByName("Improved Vampiric Blood", "player")
+        local stacks = count or 0
+        return 0.3 + stacks * 0.05
+    end,
+    [411241] = -0.25, -- Sarkareth: Void Claws
+    [408429] = -0.25, -- Sarkareth: Void Slash
+    [389684] = 0.04, -- Close to the heart, need to add support for 2/2 talent? 
+}
+
 -- Create main frame and register events
 local frame = CreateFrame("Frame")
 
 -- Set up frame update
 frame:SetScript("OnUpdate", function(self, elapsed)
-    if not DSP.inCombat then return end
-    
     DSP.timeSinceLastUpdate = DSP.timeSinceLastUpdate + elapsed
+    damageUpdateTimer = damageUpdateTimer + elapsed
+
+    -- Process damage queue on interval only in combat
+    if DSP.inCombat and damageUpdateTimer >= DAMAGE_BATCH_INTERVAL then
+        ProcessDamageQueue()
+        damageUpdateTimer = 0
+    end
+    
     if DSP.timeSinceLastUpdate >= DSP.updateThrottle then
         UpdatePrediction()
         DSP.timeSinceLastUpdate = 0
@@ -210,12 +262,25 @@ local function OnEvent(self, event, ...)
             end
             
             if damage then
-                DSP.damagePool = (DSP.damagePool or 0) + damage
+                table.insert(damageQueue, damage)
+                -- Still set up removal timer for each damage instance
                 C_Timer.After(5, function()
                     DSP.damagePool = DSP.damagePool - damage
                     UpdatePrediction()
                 end)
-                UpdatePrediction()
+            end
+        end
+    elseif event == "PLAYER_LOGOUT" then
+        CleanupFrames()
+    elseif event == "ADDON_LOADED" and ... == addonName then
+        -- Register for disable callback
+        frame:RegisterEvent("PLAYER_LOGOUT")
+        -- Add disable callback for Ace3 if you're using it
+        if type(DSP.OnDisable) == "function" then
+            local oldDisable = DSP.OnDisable
+            DSP.OnDisable = function(...)
+                CleanupFrames()
+                oldDisable(...)
             end
         end
     else
