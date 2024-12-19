@@ -13,6 +13,7 @@ DSP.versMod = 1
 DSP.inCombat = false
 DSP.updateThrottle = 0.1  -- Update every 0.1 seconds
 DSP.timeSinceLastUpdate = 0
+DSP.healAbsorbEnabled = true  -- Enable heal absorb handling by default
 local damageQueue = {}
 local DAMAGE_BATCH_INTERVAL = 0.1 -- Process damage every 0.1 seconds
 local damageUpdateTimer = 0
@@ -109,6 +110,11 @@ UpdatePrediction = function()
     local healing = max(DSP.damagePool * DSP.baseHealing * DSP.mod * DSP.versMod, 
                        UnitHealthMax("player") * DSP.minHealing * DSP.mod * DSP.versMod)
     
+    -- Add Dark Succor bonus if active
+    if AuraUtil.FindAuraByName("Dark Succor", "player") then
+        healing = healing + (UnitHealthMax("player") * 0.1)
+    end
+    
     -- Hide prediction if there's no valid healing amount
     if not healing or healing <= 0 then
         DSP.overlay:Hide()
@@ -120,6 +126,12 @@ UpdatePrediction = function()
     local width = healthBar:GetWidth()
     local maxHealth = UnitHealthMax("player")
     local health = UnitHealth("player")
+    
+    -- Handle heal absorbs
+    if DSP.healAbsorbEnabled then
+        health = max(0, health - UnitGetTotalHealAbsorbs("player"))
+    end
+    
     local startPos = (health / maxHealth) * width
     local endPos = ((health + healing) / maxHealth) * width
     
@@ -180,7 +192,14 @@ DSP.auraMods = {
     end,
     [411241] = -0.25, -- Sarkareth: Void Claws
     [408429] = -0.25, -- Sarkareth: Void Slash
-    [389684] = 0.04, -- Close to the heart, need to add support for 2/2 talent? 
+    [389684] = 0.04,  -- Close to the heart, need to add support for 2/2 talent?
+    
+    -- TWW Season 1 Debuffs
+    [333492] = -0.30, -- Amarth: Necrotic Ichor
+    [333489] = -0.50, -- Amarth: Necrotic Breath
+    [461842] = -0.30, -- The Coaglamation: Oozing Smash
+    [434705] = -0.10, -- Ulgrax the Devourer: Tenderized
+    [458212] = -0.10, -- Ovi'nax mutated spiders: Necrotic Wound
 }
 
 -- Create main frame and register events
@@ -315,17 +334,23 @@ end
 
 frame:SetScript("OnEvent", OnEvent)
 
--- Create slash command to toggle display
+-- Create slash command to toggle display and features
 SLASH_DSP1 = "/dsp"
 SlashCmdList["DSP"] = function(msg)
-    if DSP.overlay and DSP.line then
-        if DSP.overlay:IsShown() then
-            DSP.overlay:Hide()
-            DSP.line:Hide()
-        else
-            DSP.overlay:Show()
-            DSP.line:Show()
-            UpdatePrediction()
+    if msg == "absorb" then
+        DSP.healAbsorbEnabled = not DSP.healAbsorbEnabled
+        print("Death Strike Predictor: Heal absorb handling " .. (DSP.healAbsorbEnabled and "enabled" or "disabled"))
+        UpdatePrediction()
+    else
+        if DSP.overlay and DSP.line then
+            if DSP.overlay:IsShown() then
+                DSP.overlay:Hide()
+                DSP.line:Hide()
+            else
+                DSP.overlay:Show()
+                DSP.line:Show()
+                UpdatePrediction()
+            end
         end
     end
 end
