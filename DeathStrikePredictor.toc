@@ -2,7 +2,7 @@
 ## Title: Death Strike Predictor
 ## Notes: Predicts Death Strike healing based on incoming damage
 ## Author: fenneh
-## Version: 1.0.2
+## Version: 1.0.3
 ## X-Curse-Project-ID: 1161696
 
 DeathStrikePredictor.lua

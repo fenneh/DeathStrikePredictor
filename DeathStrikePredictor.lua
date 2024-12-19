@@ -1,5 +1,9 @@
 local addonName, DSP = ...
 
+-- Check if player is a Death Knight
+local _, class = UnitClass("player")
+if class ~= "DEATHKNIGHT" then return end
+
 -- Initialize variables
 DSP.damagePool = 0
 DSP.baseHealing = 0.25
