@@ -12,6 +12,9 @@ Death Strike Predictor is a World of Warcraft addon that helps Death Knights max
 - ⚔️ Works with Shadowed Unit Frames
 - 🎮 Simple toggle with `/dsp` command
 
+## Screenshot
+![Death Strike Predictor in action](Media/dsp-001.png)
+
 ## Installation
 1. Download the addon
 2. Extract to your `World of Warcraft/_retail_/Interface/AddOns` folder
