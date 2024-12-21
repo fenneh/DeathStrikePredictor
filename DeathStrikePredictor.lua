@@ -6,8 +6,8 @@ if class ~= "DEATHKNIGHT" then return end
 
 -- Initialize variables
 DSP.damagePool = 0
-DSP.baseHealing = 0.25
-DSP.minHealing = 0.07
+DSP.baseHealing = 0.25  -- Death Strike heals for 25% of damage taken
+DSP.minHealing = 0.07   -- Minimum 7% of max health
 DSP.mod = 1
 DSP.versMod = 1
 DSP.inCombat = false
@@ -117,12 +117,29 @@ UpdatePrediction = function()
         DSP.container:Show()
     end
     
-    local healing = max(DSP.damagePool * DSP.baseHealing * DSP.mod * DSP.versMod, 
-                       UnitHealthMax("player") * DSP.minHealing * DSP.mod * DSP.versMod)
+    local maxHealth = UnitHealthMax("player")
+    local healing = 0
     
-    -- Add Dark Succor bonus if active
+    -- Check if we're in Blood spec and have Coagulating Blood
+    if GetSpecialization() == 1 then  -- 1 is Blood spec
+        local aura = C_UnitAuras.GetPlayerAuraBySpellID(463730)
+        if aura and aura.points and aura.points[1] then
+            -- Use the value directly as it's already the healing amount
+            healing = aura.points[1] * DSP.mod * DSP.versMod
+        else
+            -- Fallback to normal calculation if buff not found
+            healing = max(DSP.damagePool * DSP.baseHealing, maxHealth * DSP.minHealing)
+            healing = healing * DSP.mod * DSP.versMod
+        end
+    else
+        -- Non-Blood spec calculation
+        healing = max(DSP.damagePool * DSP.baseHealing, maxHealth * DSP.minHealing)
+        healing = healing * DSP.mod * DSP.versMod
+    end
+    
+    -- Add Dark Succor bonus if active (10% max health for Frost/Unholy)
     if AuraUtil.FindAuraByName("Dark Succor", "player") then
-        healing = healing + (UnitHealthMax("player") * 0.1)
+        healing = healing + (maxHealth * 0.1)
     end
     
     -- Hide prediction if there's no valid healing amount
@@ -134,7 +151,6 @@ UpdatePrediction = function()
 
     local healthBar = DSP.healthBar
     local width = healthBar:GetWidth()
-    local maxHealth = UnitHealthMax("player")
     local health = UnitHealth("player")
     
     -- Handle heal absorbs
