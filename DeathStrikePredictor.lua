@@ -47,18 +47,21 @@ end
 
 -- Create the prediction overlay
 CreatePredictionOverlay = function(healthBar)
+    -- Clean up any existing frames first
+    CleanupFrames()
+    
     -- Create a frame to hold our textures that's parented to the health bar itself
-    local container = CreateFrame("Frame", nil, healthBar)
+    local container = CreateFrame("Frame", "DSPContainer", healthBar)
     container:SetFrameStrata("BACKGROUND")
     container:SetAllPoints(healthBar)
     container:SetFrameLevel(healthBar:GetFrameLevel() + 2)
     
-    local overlay = container:CreateTexture(nil, "ARTWORK", nil, 1)
+    local overlay = container:CreateTexture("DSPOverlay", "ARTWORK", nil, 1)
     overlay:SetColorTexture(0, 1, 0, 0.3)
     overlay:SetBlendMode("ADD")
     overlay:SetHeight(healthBar:GetHeight())
     
-    local line = container:CreateTexture(nil, "ARTWORK", nil, 2)
+    local line = container:CreateTexture("DSPLine", "ARTWORK", nil, 2)
     line:SetColorTexture(1, 0.84, 0, 0.75)
     line:SetHeight(healthBar:GetHeight())
     line:SetWidth(1)
@@ -66,6 +69,13 @@ CreatePredictionOverlay = function(healthBar)
 
     -- Store the container reference
     DSP.container = container
+    DSP.overlay = overlay
+    DSP.line = line
+    
+    -- Hide everything initially
+    container:Hide()
+    overlay:Hide()
+    line:Hide()
     
     return overlay, line
 end
@@ -149,6 +159,26 @@ end
 
 -- Cleanup frames function
 CleanupFrames = function()
+    -- Clean up any existing frames by name
+    local oldContainer = _G["DSPContainer"]
+    if oldContainer then
+        oldContainer:Hide()
+        oldContainer:SetParent(nil)
+    end
+    
+    local oldOverlay = _G["DSPOverlay"]
+    if oldOverlay then
+        oldOverlay:Hide()
+        oldOverlay:SetParent(nil)
+    end
+    
+    local oldLine = _G["DSPLine"]
+    if oldLine then
+        oldLine:Hide()
+        oldLine:SetParent(nil)
+    end
+    
+    -- Clear our references
     if DSP.container then
         DSP.container:Hide()
         DSP.container = nil
@@ -230,6 +260,16 @@ local function OnEvent(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         DSP.inCombat = false
         DSP.damagePool = 0  -- Clear damage pool when leaving combat
+        -- Ensure frames are hidden when leaving combat
+        if DSP.container then
+            DSP.container:Hide()
+        end
+        if DSP.overlay then
+            DSP.overlay:Hide()
+        end
+        if DSP.line then
+            DSP.line:Hide()
+        end
         UpdatePrediction()
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         local unit = ...
@@ -237,6 +277,9 @@ local function OnEvent(self, event, ...)
             UpdatePrediction()
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "ADDON_LOADED" then
+        -- Clean up any existing frames first
+        CleanupFrames()
+        
         -- If SUF is loaded but not initialized, wait a bit
         if event == "ADDON_LOADED" and ... == "ShadowedUnitFrames" then
             C_Timer.After(1, function()
