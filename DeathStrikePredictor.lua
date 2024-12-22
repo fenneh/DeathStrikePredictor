@@ -142,6 +142,20 @@ FindPlayerHealthBar = function()
 end
 
 -----------------------------------------------------------------------------
+-- Helper functions
+-----------------------------------------------------------------------------
+local function UpdateColors()
+    if DSP.overlay and DSP.db and DSP.db.profile then
+        local oc = DSP.db.profile.overlayColor
+        DSP.overlay:SetColorTexture(oc.r, oc.g, oc.b, oc.a)
+    end
+    if DSP.line and DSP.db and DSP.db.profile then
+        local lc = DSP.db.profile.lineColor
+        DSP.line:SetColorTexture(lc.r, lc.g, lc.b, lc.a)
+    end
+end
+
+-----------------------------------------------------------------------------
 -- 3. Create the prediction overlay
 -----------------------------------------------------------------------------
 CreatePredictionOverlay = function(healthBar)
@@ -154,12 +168,10 @@ CreatePredictionOverlay = function(healthBar)
     container:SetFrameLevel(healthBar:GetFrameLevel() + 2)
     
     local overlay = container:CreateTexture("DSPOverlay", "ARTWORK", nil, 1)
-    overlay:SetColorTexture(0, 1, 0, 0.3)
     overlay:SetBlendMode("ADD")
     overlay:SetHeight(healthBar:GetHeight())
     
     local line = container:CreateTexture("DSPLine", "ARTWORK", nil, 2)
-    line:SetColorTexture(1, 0.84, 0, 0.75)
     line:SetHeight(healthBar:GetHeight())
     line:SetWidth(1)
     line:SetBlendMode("ADD")
@@ -168,6 +180,9 @@ CreatePredictionOverlay = function(healthBar)
     DSP.container = container
     DSP.overlay = overlay
     DSP.line = line
+    
+    -- Set initial colors
+    UpdateColors()
     
     -- Hide everything initially
     container:Hide()
@@ -326,326 +341,71 @@ DSP.auraMods = {
 -- 9. Main frame and event handling
 -----------------------------------------------------------------------------
 local frame = CreateFrame("Frame")
-frame:SetScript("OnUpdate", function(self, elapsed)
-    DSP.timeSinceLastUpdate = DSP.timeSinceLastUpdate + elapsed
-    damageUpdateTimer = damageUpdateTimer + elapsed
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+frame:RegisterEvent("UNIT_MAXHEALTH")
+frame:RegisterEvent("UNIT_HEALTH")
+frame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
 
-    -- Process damage queue on interval only in combat
-    if DSP.inCombat and damageUpdateTimer >= DAMAGE_BATCH_INTERVAL then
-        ProcessDamageQueue()
-        damageUpdateTimer = 0
-    end
-    
-    if DSP.timeSinceLastUpdate >= DSP.updateThrottle then
-        UpdatePrediction()
-        DSP.timeSinceLastUpdate = 0
-    end
-end)
-
-local function OnEvent(self, event, ...)
-    if event == "PLAYER_REGEN_DISABLED" then
-        DSP.inCombat = true
-        UpdatePrediction()
-
+frame:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_LOGIN" then
+        DSP.healthBar = FindPlayerHealthBar()
+        if DSP.healthBar then
+            DSP.overlay, DSP.line = CreatePredictionOverlay(DSP.healthBar)
+        end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        DSP.healthBar = FindPlayerHealthBar()
+        if DSP.healthBar then
+            DSP.overlay, DSP.line = CreatePredictionOverlay(DSP.healthBar)
+        end
     elseif event == "PLAYER_REGEN_ENABLED" then
         DSP.inCombat = false
-        DSP.damagePool = 0  -- Clear damage pool when leaving combat
-        if DSP.container then DSP.container:Hide() end
-        if DSP.overlay then DSP.overlay:Hide() end
-        if DSP.line then DSP.line:Hide() end
         UpdatePrediction()
-
-    elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        DSP.inCombat = true
+        DSP.damagePool = 0
+        wipe(damageQueue)
+        UpdatePrediction()
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        local timestamp, subevent, _, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName, _, amount = CombatLogGetCurrentEventInfo()
+        
+        if destGUID == UnitGUID("player") and subevent == "SWING_DAMAGE" then
+            amount = spellId -- In swing events, the damage is in the spellId parameter
+            table.insert(damageQueue, amount)
+        elseif destGUID == UnitGUID("player") and (subevent == "SPELL_DAMAGE" or subevent == "RANGE_DAMAGE") then
+            table.insert(damageQueue, amount)
+        end
+    elseif event == "UNIT_MAXHEALTH" or event == "UNIT_HEALTH" or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
         local unit = ...
         if unit == "player" then
             UpdatePrediction()
         end
-
-    elseif event == "PLAYER_LOGIN"
-        or event == "PLAYER_ENTERING_WORLD"
-        or event == "ADDON_LOADED"
-    then
-        CleanupFrames()
-        
-        -- If SUF is loaded but not initialized, wait a bit
-        if event == "ADDON_LOADED" and ... == "ShadowedUnitFrames" then
-            C_Timer.After(1, function()
-                DSP.healthBar = FindPlayerHealthBar()
-                if DSP.healthBar then
-                    DSP.overlay, DSP.line = CreatePredictionOverlay(DSP.healthBar)
-                    UpdatePrediction()
-                end
-            end)
-            return
-        end
-        
-        DSP.healthBar = FindPlayerHealthBar()
-        if not DSP.healthBar then
-            local retryCount = 0
-            local function retryFind()
-                DSP.healthBar = FindPlayerHealthBar()
-                if DSP.healthBar then
-                    DSP.overlay, DSP.line = CreatePredictionOverlay(DSP.healthBar)
-                    UpdatePrediction()
-                elseif retryCount < 5 then
-                    retryCount = retryCount + 1
-                    C_Timer.After(1, retryFind)
-                end
-            end
-            C_Timer.After(1, retryFind)
-        else
-            DSP.overlay, DSP.line = CreatePredictionOverlay(DSP.healthBar)
-            UpdatePrediction()
-        end
-
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        local timestamp, subEvent, _, sourceGUID, _, _, _, destGUID, _, _, _, spellID, spellName, _, amount, overhealing = CombatLogGetCurrentEventInfo()
-        
-        -- Not player's action => possibly damage to the player
-        if sourceGUID ~= UnitGUID("player") then
-            if destGUID == UnitGUID("player") then
-                local damage
-                if subEvent == "SWING_DAMAGE" then
-                    damage = select(12, CombatLogGetCurrentEventInfo())
-                elseif subEvent == "SPELL_ABSORBED" then
-                    damage = select(22, CombatLogGetCurrentEventInfo()) or select(19, CombatLogGetCurrentEventInfo())
-                elseif subEvent:match("_DAMAGE$") then
-                    damage = select(15, CombatLogGetCurrentEventInfo())
-                end
-                
-                if damage then
-                    table.insert(damageQueue, damage)
-                    C_Timer.After(5, function()
-                        DSP.damagePool = DSP.damagePool - damage
-                        UpdatePrediction()
-                    end)
-                end
-            end
-            return
-        end
-        
-        -- Handle Death Strike events
-        if spellID == DEATH_STRIKE_SPELL_ID then
-            if subEvent == "SPELL_CAST_SUCCESS" then
-                DSP.lastPredicted = GetPredictedHealing()
-                
-                -- Debug info only when debug mode is enabled
-                if DSP.debugMode then
-                    local maxHealth = UnitHealthMax("player")
-                    local spec = GetSpecialization()
-                    print("=== Death Strike Cast Debug ===")
-                    print("Spec:", (spec == 1 and "Blood" or spec == 2 and "Frost" or "Unholy"))
-                    print("Max Health:", maxHealth)
-                    print("=== Damage Tracking ===")
-                    print("Damage Pool:", DSP.damagePool)
-                    local totalQueuedDamage = 0
-                    for _, dmg in ipairs(damageQueue) do
-                        totalQueuedDamage = totalQueuedDamage + dmg
-                    end
-                    print("Queued Damage:", totalQueuedDamage)
-                    print("Total Recent Damage:", DSP.damagePool + totalQueuedDamage)
-                    print("=== Healing Calculations ===")
-                    print("Base Min Healing:", maxHealth * DSP.minHealing)
-                    print("Base Pool Healing:", DSP.damagePool * DSP.baseHealing)
-                    
-                    -- Check Coagulating Blood
-                    if spec == 1 then
-                        local aura = C_UnitAuras.GetPlayerAuraBySpellID(463730)
-                        if aura and aura.points and aura.points[1] then
-                            print("Coagulating Blood Value:", aura.points[1])
-                        else
-                            print("Coagulating Blood: Not active")
-                        end
-                    end
-                    
-                    -- Print active modifiers
-                    print("=== Active Modifiers ===")
-                    print("Base Healing:", DSP.baseHealing, "(25% of damage taken)")
-                    print("Min Healing:", DSP.minHealing, "(7% of max health)")
-                    print("Base Mod:", DSP.mod)
-                    print("Vers Mod:", DSP.versMod)
-                    
-                    -- Print active talents
-                    print("=== Active Talents ===")
-                    for tid, modifier in pairs(DSP.talentMods) do
-                        if IsPlayerSpell(tid) then
-                            if type(modifier) == "function" then
-                                print("Talent", tid, ":", modifier())
-                            else
-                                print("Talent", tid, ":", modifier)
-                            end
-                        end
-                    end
-                    
-                    -- Print active auras
-                    print("=== Active Auras ===")
-                    for aid, modifier in pairs(DSP.auraMods) do
-                        local aura = C_UnitAuras.GetPlayerAuraBySpellID(aid)
-                        if aura then
-                            if type(modifier) == "function" then
-                                print("Aura", aid, ":", modifier())
-                            else
-                                print("Aura", aid, ":", modifier)
-                            end
-                        end
-                    end
-                    
-                    -- Print predicted healing
-                    print("=== Final Healing ===")
-                    print("Predicted Healing:", DSP.lastPredicted)
-                    print("Percent of Max Health:", string.format("%.1f%%", (DSP.lastPredicted / maxHealth) * 100))
-                end
-                
-            elseif subEvent == "SPELL_HEAL" then
-                local overhealing = select(16, CombatLogGetCurrentEventInfo())
-                local effectiveHealing = amount - (overhealing or 0)
-                
-                if DSP.debugMode then
-                    print("=== Death Strike Healing Results ===")
-                    print(string.format("Effective Healing: %d", effectiveHealing))
-                    print(string.format("Overhealing: %d", overhealing or 0))
-                    print(string.format("Total Healing: %d", amount))
-                    
-                    if DSP.lastPredicted then
-                        local accuracy = (amount / DSP.lastPredicted) * 100
-                        print(string.format("Prediction Accuracy: %.1f%%", accuracy))
-                    end
-                    print("------------------------")
-                end
-            end
-        end
-
-    elseif event == "PLAYER_LOGOUT" then
-        CleanupFrames()
-    elseif event == "ADDON_LOADED" and ... == addonName then
-        -- Register for disable callback
-        frame:RegisterEvent("PLAYER_LOGOUT")
-        if type(DSP.OnDisable) == "function" then
-            local oldDisable = DSP.OnDisable
-            DSP.OnDisable = function(...)
-                CleanupFrames()
-                oldDisable(...)
-            end
-        end
-    else
-        UpdatePrediction()
     end
-end
+end)
 
-local events = {
-    "PLAYER_LOGIN",
-    "PLAYER_ENTERING_WORLD",
-    "PLAYER_SPECIALIZATION_CHANGED",
-    "PLAYER_TALENT_UPDATE",
-    "UNIT_STATS",
-    "COMBAT_LOG_EVENT_UNFILTERED",
-    "ADDON_LOADED",
-    "UI_SCALE_CHANGED",
-    "DISPLAY_SIZE_CHANGED",
-    "PLAYER_REGEN_ENABLED",
-    "PLAYER_REGEN_DISABLED",
-    "UNIT_HEALTH",
-    "UNIT_MAXHEALTH"
-}
+-- Update the damage pool every DAMAGE_BATCH_INTERVAL seconds
+frame:SetScript("OnUpdate", function(self, elapsed)
+    DSP.timeSinceLastUpdate = (DSP.timeSinceLastUpdate or 0) + elapsed
+    if DSP.timeSinceLastUpdate >= DAMAGE_BATCH_INTERVAL then
+        ProcessDamageQueue()
+        DSP.timeSinceLastUpdate = 0
+    end
+end)
 
-for _, event in ipairs(events) do
-    frame:RegisterEvent(event)
-end
-
-frame:SetScript("OnEvent", OnEvent)
-
------------------------------------------------------------------------------
--- 10. Slash command to toggle display / debug
------------------------------------------------------------------------------
+-- Register slash command
 SLASH_DSP1 = "/dsp"
 SlashCmdList["DSP"] = function(msg)
-    if msg == "absorb" then
-        DSP.healAbsorbEnabled = not DSP.healAbsorbEnabled
-        print("Death Strike Predictor: Heal absorb handling "
-            .. (DSP.healAbsorbEnabled and "enabled" or "disabled"))
-        UpdatePrediction()
-
-    elseif msg == "debug" then
+    if msg == "debug" then
         DSP.debugMode = not DSP.debugMode
-        print("Death Strike Predictor: Debug mode " .. (DSP.debugMode and "enabled" or "disabled"))
-        if DSP.debugMode then
-            local maxHealth = UnitHealthMax("player")
-            local spec = GetSpecialization()
-            print("=== Death Strike Predictor Debug ===")
-            print("Spec:", (spec == 1 and "Blood" or spec == 2 and "Frost" or "Unholy"))
-            print("Max Health:", maxHealth)
-            print("=== Damage Tracking ===")
-            print("Damage Pool:", DSP.damagePool)
-            local totalQueuedDamage = 0
-            for _, dmg in ipairs(damageQueue) do
-                totalQueuedDamage = totalQueuedDamage + dmg
-            end
-            print("Queued Damage:", totalQueuedDamage)
-            print("Total Recent Damage:", DSP.damagePool + totalQueuedDamage)
-            print("=== Healing Calculations ===")
-            print("Base Min Healing:", maxHealth * DSP.minHealing)
-            print("Base Pool Healing:", DSP.damagePool * DSP.baseHealing)
-            
-            -- Check Coagulating Blood
-            if spec == 1 then
-                local aura = C_UnitAuras.GetPlayerAuraBySpellID(463730)
-                if aura and aura.points and aura.points[1] then
-                    print("Coagulating Blood Raw Value:", aura.points[1])
-                else
-                    print("Coagulating Blood: Not active")
-                end
-            end
-            
-            -- Check modifiers
-            print("=== Active Modifiers ===")
-            print("Base Healing:", DSP.baseHealing, "(25% of damage taken)")
-            print("Min Healing:", DSP.minHealing, "(7% of max health)")
-            print("Base Mod:", DSP.mod)
-            print("Vers Mod:", DSP.versMod)
-            
-            -- Talents
-            print("=== Active Talents ===")
-            for spellID, modifier in pairs(DSP.talentMods) do
-                if IsPlayerSpell(spellID) then
-                    if type(modifier) == "function" then
-                        print("Talent", spellID, ":", modifier())
-                    else
-                        print("Talent", spellID, ":", modifier)
-                    end
-                end
-            end
-            
-            -- Auras
-            print("=== Active Auras ===")
-            for spellID, modifier in pairs(DSP.auraMods) do
-                local aura = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
-                if aura then
-                    if type(modifier) == "function" then
-                        print("Aura", spellID, ":", modifier())
-                    else
-                        print("Aura", spellID, ":", modifier)
-                    end
-                end
-            end
-            
-            -- Final healing prediction
-            local healing = GetPredictedHealing()
-            print("=== Final Healing ===")
-            print("Predicted Healing:", healing)
-            print("Percent of Max Health:", string.format("%.1f%%", (healing / maxHealth) * 100))
-        end
-
-    else
-        -- Toggle the overlay
-        if DSP.overlay and DSP.line then
-            if DSP.overlay:IsShown() then
-                DSP.overlay:Hide()
-                DSP.line:Hide()
-            else
-                DSP.overlay:Show()
-                DSP.line:Show()
-                UpdatePrediction()
-            end
-        end
+        print("Death Strike Predictor debug mode:", DSP.debugMode and "ON" or "OFF")
     end
 end
+
+-- Initialize core variables
+DSP.damagePool = 0
+DSP.inCombat = false
+DSP.timeSinceLastUpdate = 0
+DSP.healAbsorbEnabled = true

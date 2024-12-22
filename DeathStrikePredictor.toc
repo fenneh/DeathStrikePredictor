@@ -4,5 +4,8 @@
 ## Author: fenneh
 ## Version: 1.0.5
 ## X-Curse-Project-ID: 1161696
+## Dependencies: Ace3
+## SavedVariables: DeathStrikePredictorDB
 
+DeathStrikePredictorUI.lua
 DeathStrikePredictor.lua
