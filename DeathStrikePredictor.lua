@@ -234,6 +234,16 @@ UpdatePrediction = function()
     local maxHealth = UnitHealthMax("player")
     local healing = GetPredictedHealing()
     
+    -- Sanity check and cap the healing prediction
+    local maxAllowedHealing = maxHealth * 1.5 -- Cap at 150% of max health
+    if healing > maxAllowedHealing then
+        if DSP.debugMode then
+            print(string.format("WARNING: Excessive healing prediction: %.0f (%.0f%% of max health)", healing, (healing / maxHealth) * 100))
+            print(string.format("Capping at: %.0f (150%% of max health)", maxAllowedHealing))
+        end
+        healing = maxAllowedHealing
+    end
+    
     -- Hide prediction if no valid healing amount
     if not healing or healing <= 0 then
         DSP.overlay:Hide()
@@ -252,6 +262,9 @@ UpdatePrediction = function()
     
     local startPos = (health / maxHealth) * width
     local endPos = ((health + healing) / maxHealth) * width
+    
+    -- Cap the endPos to the width of the health bar
+    endPos = math.min(endPos, width)
     
     -- Update overlay position
     DSP.overlay:ClearAllPoints()
